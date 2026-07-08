@@ -26,8 +26,8 @@
       "typedRoutes": true
     },
     "extra": {
-      "EXPO_PUBLIC_SUPABASE_URL": "https://<your-project>.supabase.co",
-      "EXPO_PUBLIC_SUPABASE_ANON_KEY": "anon-REPLACE_WITH_YOUR_ANON_KEY"
+      "EXPO_PUBLIC_SUPABASE_URL": "https://ehskodaqmprwcstwhywy.supabase.co",
+      "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_QTKFrT_0GdSls0vRU94WQA_5nNgvJmw"
     }
   }
 }
