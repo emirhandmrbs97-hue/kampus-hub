@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "KampüsHub",
+    "slug": "kampus-hub",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "kampushub",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kampushub.app"
+    },
+    "android": {
+      "package": "com.kampushub.app",
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "@react-native-community/datetimepicker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
