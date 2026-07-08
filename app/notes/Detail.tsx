@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Button, ActivityIndicator, Alert, Linking } from 'react-native';
+import { View, Text, Button, ActivityIndicator, Alert, Linking, Platform } from 'react-native';
 import { getNotePublicUrl, getNoteSignedUrl, incrementNoteView, incrementNoteDownload, fetchNotes, deleteNote } from '../../lib/notesApi';
 import { supabase } from '../../lib/supabaseClient';
 import { WebView } from 'react-native-webview';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 export default function NoteDetail({ route, navigation }: any) {
   const noteId = route?.params?.id;
@@ -52,8 +54,37 @@ export default function NoteDetail({ route, navigation }: any) {
     if (!note) return;
     try {
       await incrementNoteDownload(note.id);
-      const url = await getNoteSignedUrl(note.file_path, 60*60);
-      // open url in browser to download
+      // Prefer signed URL for private buckets
+      const url = await getNoteSignedUrl(note.file_path, 60*60).catch(async () => {
+        return await getNotePublicUrl(note.file_path);
+      });
+
+      if (!url) throw new Error('URL alınamadı');
+
+      // Platform-specific download/open behavior
+      if (Platform.OS === 'android') {
+        // Download file to local cache and open with native viewer via Sharing
+        try {
+          const localPath = FileSystem.documentDirectory + note.filename;
+          const { uri, status } = await FileSystem.downloadAsync(url, localPath);
+          // status might be undefined on some runtimes; check uri
+          if (!uri) throw new Error('Dosya indirme başarısız');
+          // Use Sharing to open in external app
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(uri);
+          } else {
+            // fallback to opening url
+            Linking.openURL(url);
+          }
+          return;
+        } catch (err) {
+          console.warn('Local download/open failed, falling back to browser', err);
+          Linking.openURL(url);
+          return;
+        }
+      }
+
+      // iOS / Web / others: open URL (webview already used for viewing)
       Linking.openURL(url);
     } catch (e: any) { Alert.alert('Hata', e.message || 'İndirme hatası'); }
   }

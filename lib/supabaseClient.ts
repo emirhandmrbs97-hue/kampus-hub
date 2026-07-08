@@ -9,3 +9,27 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Automatically create / upsert a profile record when a user signs in.
+// This ensures profiles.id matches the authenticated user's id so RLS policies work correctly.
+try {
+  supabase.auth.onAuthStateChange(async (_event, session) => {
+    const user = session?.user;
+    if (!user) return;
+    try {
+      await supabase.from('profiles').upsert({
+        id: user.id,
+        email: user.email,
+        full_name: (user.user_metadata as any)?.full_name ?? user.email,
+        username: (user.user_metadata as any)?.preferred_username ?? null,
+        avatar_url: (user.user_metadata as any)?.avatar_url ?? null,
+      }, { onConflict: 'id' });
+    } catch (e) {
+      console.warn('Failed to upsert profile on auth state change', e);
+    }
+  });
+} catch (e) {
+  // on environments without auth support this may fail silently
+  // but we should not crash the app
+  console.warn('Auth listener setup failed', e);
+}
