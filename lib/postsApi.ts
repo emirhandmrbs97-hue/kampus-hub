@@ -1,12 +1,19 @@
 import { supabase } from './supabaseClient';
 
 export async function fetchPosts() {
+  // fetch posts with related comments and likes
   const { data, error } = await supabase
     .from('posts')
-    .select('id, content, created_at, author')
+    .select(`id, content, created_at, author, comments(id, content, created_at, author), likes(id, user_id)`)
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return data;
+  // normalize likesCount from likes array
+  const posts = (data || []).map((p: any) => ({
+    ...p,
+    likesCount: Array.isArray(p.likes) ? p.likes.length : 0,
+    comments: p.comments || []
+  }));
+  return posts;
 }
 
 export async function addPost(content: string, userId: string) {
