@@ -1,48 +1,74 @@
 import React, { useState } from 'react';
-import { View, Button, Text } from 'react-native';
+import { View, Text, Button, TextInput, Alert, ActivityIndicator } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import { uploadNoteFile, createNoteRecord } from '../../lib/notesApi';
 import { supabase } from '../../lib/supabaseClient';
 
-export default function NotesUpload({ route }: any) {
-  // If you use expo-router, you can get params; otherwise use auth user id
-  const userId = route?.params?.userId ?? null;
-  const [msg, setMsg] = useState('');
+export default function NotesUpload({ navigation }: any) {
+  const [course, setCourse] = useState('');
+  const [section, setSection] = useState('');
+  const [classNumber, setClassNumber] = useState('1');
+  const [semester, setSemester] = useState('');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [file, setFile] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
 
-  async function pickAndUpload() {
+  async function pickFile() {
     const res = await DocumentPicker.getDocumentAsync({ type: 'application/pdf' });
-    if (res.type !== 'success') return setMsg('Dosya seçimi iptal edildi.');
-    if (!res.name.toLowerCase().endsWith('.pdf')) return setMsg('Sadece PDF dosyası yükleyin.');
+    if (res.type !== 'success') return;
+    if (!res.name.toLowerCase().endsWith('.pdf')) return Alert.alert('Sadece PDF dosyası seçebilirsiniz');
+    if (res.size && res.size > 20 * 1024 * 1024) return Alert.alert('Dosya 20MB üzerinde olamaz');
+    setFile(res);
+  }
 
+  async function submit() {
+    if (!course || !section || !semester || !title || !file) return Alert.alert('Lütfen gerekli alanları doldurun ve bir PDF seçin');
+    setLoading(true);
     try {
-      const fileResp = await fetch(res.uri);
-      const blob = await fileResp.blob();
-      const filename = res.name;
-      const id = userId ?? 'anonymous';
-      const filePath = `notes/${id}/${Date.now()}-${filename}`;
+      const { data } = await supabase.auth.getUser();
+      const userId = data?.user?.id;
+      if (!userId) throw new Error('Kullanıcı oturumu yok');
 
-      const { error: uploadError } = await supabase.storage.from('notes').upload(filePath, blob, {
-        contentType: 'application/pdf',
-      });
-      if (uploadError) throw uploadError;
-
-      const { error: dbError } = await supabase.from('notes').insert([{
+      const uploaded = await uploadNoteFile(file.uri, file.name, file.mimeType || 'application/pdf');
+      const record = await createNoteRecord({
         author: userId,
-        file_path: filePath,
-        filename
-      }]);
-      if (dbError) throw dbError;
+        course,
+        section,
+        class: parseInt(classNumber, 10),
+        semester,
+        title,
+        description,
+        file_path: uploaded.path,
+        filename: uploaded.filename,
+      });
 
-      setMsg('Yükleme başarılı');
+      Alert.alert('Not yüklendi');
+      navigation.navigate('NotesList');
     } catch (err: any) {
-      console.error(err);
-      setMsg('Yükleme hatası: ' + err.message);
+      Alert.alert('Yükleme hatası', err.message || 'Hata');
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
-    <View style={{ padding: 16 }}>
-      <Button title="PDF Seç ve Yükle" onPress={pickAndUpload} />
-      <Text style={{ marginTop: 12 }}>{msg}</Text>
+    <View style={{ flex: 1, padding: 16 }}>
+      <Text> Ders adı</Text>
+      <TextInput value={course} onChangeText={setCourse} style={{ borderWidth: 1, padding: 8 }} />
+      <Text> Bölüm</Text>
+      <TextInput value={section} onChangeText={setSection} style={{ borderWidth: 1, padding: 8 }} />
+      <Text> Sınıf</Text>
+      <TextInput value={classNumber} onChangeText={setClassNumber} keyboardType="numeric" style={{ borderWidth: 1, padding: 8 }} />
+      <Text> Dönem</Text>
+      <TextInput value={semester} onChangeText={setSemester} style={{ borderWidth: 1, padding: 8 }} />
+      <Text> Not başlığı</Text>
+      <TextInput value={title} onChangeText={setTitle} style={{ borderWidth: 1, padding: 8 }} />
+      <Text> Kısa açıklama</Text>
+      <TextInput value={description} onChangeText={setDescription} style={{ borderWidth: 1, padding: 8 }} multiline />
+
+      <Button title={file ? `Seçili: ${file.name}` : 'PDF Seç'} onPress={pickFile} />
+      {loading ? <ActivityIndicator /> : <Button title="Yükle" onPress={submit} />}
     </View>
   );
 }
