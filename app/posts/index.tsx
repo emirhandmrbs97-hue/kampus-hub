@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, TextInput, Button, FlatList, StyleSheet, TouchableOpacity, Share } from 'react-native';
 import { supabase } from '../../lib/supabaseClient';
 import { fetchPosts, addPost, addComment, toggleLike } from '../../lib/postsApi';
@@ -7,13 +7,27 @@ export default function PostsScreen() {
   const [posts, setPosts] = useState<any[]>([]);
   const [newText, setNewText] = useState('');
   const [userId, setUserId] = useState<string | null>(null);
+  const subscriptionRef = useRef<any>(null);
 
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
       setUserId(data?.user?.id ?? null);
-      load();
+      await load();
+      setupRealtime();
     })();
+
+    return () => {
+      // cleanup subscription
+      try {
+        if (subscriptionRef.current) {
+          supabase.removeChannel(subscriptionRef.current);
+          subscriptionRef.current = null;
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
   }, []);
 
   async function load() {
@@ -25,12 +39,34 @@ export default function PostsScreen() {
     }
   }
 
+  function setupRealtime() {
+    // subscribe to changes on posts, comments, likes and reload on change
+    const channel = supabase.channel('public:posts_comments_likes');
+
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, payload => {
+      // console.log('posts event', payload);
+      load();
+    });
+
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, payload => {
+      // console.log('comments event', payload);
+      load();
+    });
+
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, payload => {
+      // console.log('likes event', payload);
+      load();
+    });
+
+    channel.subscribe();
+    subscriptionRef.current = channel;
+  }
+
   async function handleAddPost() {
     if (!newText.trim() || !userId) return;
     const created = await addPost(newText.trim(), userId);
-    // optimistic update: add to local posts
     if (created && created[0]) {
-      setPosts(prev => [{ ...created[0], likesCount: 0, comments: [] }, ...prev]);
+      setPosts(prev => [{ ...created[0], likesCount: 0, comments: [], author: { id: userId } }, ...prev]);
     }
     setNewText('');
   }
@@ -39,15 +75,13 @@ export default function PostsScreen() {
     if (!text.trim() || !userId) return;
     const res = await addComment(postId, text.trim(), userId);
     if (res && res[0]) {
-      // append comment locally
-      setPosts(prev => prev.map(p => p.id === postId ? { ...p, comments: [...(p.comments||[]), res[0]] } : p));
+      setPosts(prev => prev.map(p => p.id === postId ? { ...p, comments: [...(p.comments||[]), { ...res[0], author: { full_name: 'Siz' } }] } : p));
     }
   }
 
   async function handleLike(postId: string) {
     if (!userId) return;
     const res = await toggleLike(postId, userId);
-    // update local likesCount
     setPosts(prev => prev.map(p => {
       if (p.id !== postId) return p;
       const delta = res?.action === 'liked' ? 1 : -1;
@@ -81,6 +115,7 @@ export default function PostsScreen() {
         renderItem={({ item }) => (
           <View style={styles.post}>
             <Text style={styles.postText}>{item.content}</Text>
+            <Text style={{ fontSize: 12, color: '#666' }}>Gönderen: {item.author?.full_name || 'Anonim'}</Text>
             <View style={styles.row}>
               <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(item.id)}>
                 <Text>Beğen ({item.likesCount || 0})</Text>
@@ -107,7 +142,7 @@ function CommentsSection({ post, onComment }: { post: any; onComment: (id: strin
     <View style={{ marginTop: 8 }}>
       {(post.comments || []).map((c: any) => (
         <View key={c.id} style={{ paddingVertical: 4 }}>
-          <Text style={{ fontWeight: '600' }}>{c.author || 'Anonim'}</Text>
+          <Text style={{ fontWeight: '600' }}>{c.author?.full_name || c.author || 'Anonim'}</Text>
           <Text>{c.content}</Text>
         </View>
       ))}
